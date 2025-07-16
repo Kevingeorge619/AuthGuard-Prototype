@@ -13,6 +13,9 @@
         .glow-shadow {
             box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 5px rgba(59, 130, 246, 0.3);
         }
+        .modal {
+            transition: opacity 0.3s ease;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen">
@@ -60,9 +63,14 @@
             <button id="saveButton" class="px-6 py-2 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed glow-shadow" disabled>
                 Save Sample
             </button>
-            <button id="resetButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-gray-500 transition">
-                Reset All
-            </button>
+             <div class="flex space-x-2">
+                <button id="resetButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-gray-500 transition">
+                    Reset All
+                </button>
+                <button id="deleteAllButton" class="px-6 py-2 font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500 transition">
+                    Delete All Data
+                </button>
+            </div>
         </div>
         
         <!-- Status Message -->
@@ -76,11 +84,27 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 modal opacity-0 pointer-events-none">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+            <h2 class="text-2xl font-bold text-white">Are you sure?</h2>
+            <p class="mt-2 text-gray-400">This will permanently delete all training data from the database. This action cannot be undone.</p>
+            <div class="mt-6 flex justify-center space-x-4">
+                <button id="cancelDeleteButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700">
+                    Cancel
+                </button>
+                <button id="confirmDeleteButton" class="px-6 py-2 font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">
+                    Yes, Delete All
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Main Application Logic ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -91,11 +115,15 @@
             const passwordInput = document.getElementById('password');
             const saveButton = document.getElementById('saveButton');
             const resetButton = document.getElementById('resetButton');
+            const deleteAllButton = document.getElementById('deleteAllButton');
             const statusMessage = document.getElementById('statusMessage');
             const errorMessage = document.getElementById('errorMessage');
             const progressBar = document.getElementById('progressBar');
             const progressText = document.getElementById('progressText');
             const firebaseUserIdText = document.getElementById('firebaseUserId');
+            const confirmModal = document.getElementById('confirmModal');
+            const confirmDeleteButton = document.getElementById('confirmDeleteButton');
+            const cancelDeleteButton = document.getElementById('cancelDeleteButton');
 
             // --- State Management ---
             const TARGET_SAMPLES = 10;
@@ -267,7 +295,7 @@
                 const trainingSubjectId = `${baseUserId}_${sampleCount}`;
 
                 try {
-                    const collectionPath = `/keystroke_training_data`;
+                    const collectionPath = "keystroke_training_data";
                     
                     await addDoc(collection(db, collectionPath), {
                         trainingSubjectId: trainingSubjectId,
@@ -298,6 +326,41 @@
                     errorMessage.textContent = "Failed to save data. Check console.";
                     statusMessage.textContent = '';
                     saveButton.disabled = false;
+                }
+            });
+
+            // --- Delete Data Logic ---
+            const showConfirmModal = () => {
+                confirmModal.classList.remove('opacity-0', 'pointer-events-none');
+            };
+            const hideConfirmModal = () => {
+                confirmModal.classList.add('opacity-0', 'pointer-events-none');
+            };
+
+            deleteAllButton.addEventListener('click', showConfirmModal);
+            cancelDeleteButton.addEventListener('click', hideConfirmModal);
+            confirmDeleteButton.addEventListener('click', async () => {
+                hideConfirmModal();
+                statusMessage.textContent = 'Deleting all data...';
+                errorMessage.textContent = '';
+                deleteAllButton.disabled = true;
+
+                try {
+                    const collectionPath = "keystroke_training_data";
+                    const querySnapshot = await getDocs(collection(db, collectionPath));
+                    const deletePromises = [];
+                    querySnapshot.forEach((doc) => {
+                        deletePromises.push(deleteDoc(doc.ref));
+                    });
+                    await Promise.all(deletePromises);
+                    statusMessage.textContent = 'All training data has been deleted successfully.';
+                    console.log('All documents deleted.');
+                    resetAll(); // Also reset the UI
+                } catch (error) {
+                    console.error("Error deleting documents: ", error);
+                    errorMessage.textContent = 'Failed to delete data. Check console.';
+                } finally {
+                    deleteAllButton.disabled = false;
                 }
             });
 
