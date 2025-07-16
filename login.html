@@ -126,7 +126,11 @@
                     const pressTime = Date.now();
                     keyPressTimestamps[e.key] = pressTime;
                     const flightTime = lastReleaseTime ? pressTime - lastReleaseTime : 0;
-                    liveKeystrokeData.push({ key: e.key, flight_time: flightTime > 0 ? flightTime : 0 });
+                    liveKeystrokeData.push({
+                        key: e.key,
+                        field: e.target.id,
+                        flight_time: flightTime > 0 ? flightTime : 0
+                    });
                 }
             };
 
@@ -136,7 +140,7 @@
                 const pressTime = keyPressTimestamps[e.key];
                 if (pressTime) {
                     const dwellTime = releaseTime - pressTime;
-                    const eventData = liveKeystrokeData.find(d => d.key === e.key && !d.dwell_time);
+                    const eventData = liveKeystrokeData.find(d => d.key === e.key && d.field === e.target.id && !d.dwell_time);
                     if (eventData) eventData.dwell_time = dwellTime;
                     delete keyPressTimestamps[e.key];
                 }
@@ -147,23 +151,58 @@
             passwordInput.addEventListener('keydown', handleKeyDown);
             passwordInput.addEventListener('keyup', handleKeyUp);
 
-            // --- Analysis Logic ---
-            const calculateAverages = (keystrokes) => {
-                if (!keystrokes || keystrokes.length === 0) return { avgDwell: 0, avgFlight: 0 };
-                const totalDwell = keystrokes.reduce((sum, k) => sum + (k.dwell_time || 0), 0);
-                const totalFlight = keystrokes.reduce((sum, k) => sum + (k.flight_time || 0), 0);
-                return {
-                    avgDwell: totalDwell / keystrokes.length,
-                    avgFlight: totalFlight / keystrokes.length,
-                };
+            // --- ADVANCED Analysis Logic ---
+            
+            // Calculates the mean and standard deviation for a set of timings
+            const getStats = (timings) => {
+                const n = timings.length;
+                if (n === 0) return { mean: 0, std: 0 };
+                const mean = timings.reduce((a, b) => a + b) / n;
+                const std = Math.sqrt(timings.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / n);
+                return { mean, std };
             };
 
-            const calculateRiskScore = (liveAverages, trainingAverages) => {
-                const dwellDiff = Math.abs(liveAverages.avgDwell - trainingAverages.avgDwell) / trainingAverages.avgDwell;
-                const flightDiff = Math.abs(liveAverages.avgFlight - trainingAverages.avgFlight) / trainingAverages.avgFlight;
-                const riskScore = (dwellDiff + flightDiff) / 2;
-                return isNaN(riskScore) ? 1 : riskScore;
+            // Prepares the training data by calculating stats for each key
+            const getTrainingProfile = (trainingKeystrokes) => {
+                const profile = {};
+                // Group strokes by key
+                const strokesByKey = trainingKeystrokes.reduce((acc, stroke) => {
+                    if (!acc[stroke.key]) acc[stroke.key] = { dwells: [], flights: [] };
+                    if(stroke.dwell_time) acc[stroke.key].dwells.push(stroke.dwell_time);
+                    if(stroke.flight_time) acc[stroke.key].flights.push(stroke.flight_time);
+                    return acc;
+                }, {});
+
+                // Calculate stats for each key
+                for (const key in strokesByKey) {
+                    profile[key] = {
+                        dwell: getStats(strokesByKey[key].dwells),
+                        flight: getStats(strokesByKey[key].flights),
+                    };
+                }
+                return profile;
             };
+
+            // Compares the live typing to the training profile
+            const comparePatterns = (liveStrokes, trainingProfile) => {
+                let deviations = [];
+                for (const stroke of liveStrokes) {
+                    const profileKey = trainingProfile[stroke.key];
+                    if (profileKey) {
+                        // Calculate Z-score (how many standard deviations away from the mean)
+                        if (stroke.dwell_time && profileKey.dwell.std > 0) {
+                            deviations.push(Math.abs(stroke.dwell_time - profileKey.dwell.mean) / profileKey.dwell.std);
+                        }
+                        if (stroke.flight_time && profileKey.flight.std > 0) {
+                             deviations.push(Math.abs(stroke.flight_time - profileKey.flight.mean) / profileKey.flight.std);
+                        }
+                    }
+                }
+                if (deviations.length === 0) return 1; // Max risk if no comparable keys
+                // Average deviation score
+                return deviations.reduce((a, b) => a + b, 0) / deviations.length;
+            };
+
 
             const showModal = (title, message, score, isSuccess) => {
                 modalTitle.textContent = title;
@@ -184,8 +223,10 @@
             // --- Login Button Action ---
             loginButton.addEventListener('click', async () => {
                 const username = usernameInput.value.trim();
-                if (!username) {
-                    errorMessage.textContent = "Username is required.";
+                const password = passwordInput.value.trim();
+
+                if (!username || !password) {
+                    errorMessage.textContent = "All fields are required.";
                     return;
                 }
                 if (!isAuthReady) {
@@ -199,34 +240,48 @@
 
                 try {
                     // 1. Fetch training data from Firestore
-                    const collectionPath = `/keystroke_training_data`;
+                    const collectionPath = "keystroke_training_data";
                     const q = query(collection(db, collectionPath), where("baseUserId", "==", username));
                     const querySnapshot = await getDocs(q);
 
                     if (querySnapshot.empty) {
-                        showModal('Login Failed', `No training data found for user '${username}'. Please complete the training process.`, 1, false);
+                        showModal('Login Failed', `No training data found for user '${username}'.`, 1, false);
                         return;
                     }
 
-                    // 2. Calculate average from all training samples
-                    let allTrainingKeystrokes = [];
+                    // 2. Separate training data by field (username/password)
+                    let trainingUsernameStrokes = [];
+                    let trainingPasswordStrokes = [];
                     querySnapshot.forEach(doc => {
-                        allTrainingKeystrokes.push(...doc.data().keystrokes);
+                        const data = doc.data();
+                        if (data.username !== username) { // Basic password check
+                           console.warn("Training data username mismatch. Skipping doc:", doc.id);
+                           return;
+                        }
+                        trainingUsernameStrokes.push(...data.keystrokes.filter(k => k.field === 'username'));
+                        trainingPasswordStrokes.push(...data.keystrokes.filter(k => k.field === 'password'));
                     });
-                    const trainingAverages = calculateAverages(allTrainingKeystrokes);
 
-                    // 3. Calculate averages from the live attempt
-                    const liveAverages = calculateAverages(liveKeystrokeData);
-                    
-                    // 4. Calculate risk score
-                    const riskScore = calculateRiskScore(liveAverages, trainingAverages);
-                    const RISK_THRESHOLD = 0.35;
+                    // 3. Create a statistical profile from the training data
+                    const usernameProfile = getTrainingProfile(trainingUsernameStrokes);
+                    const passwordProfile = getTrainingProfile(trainingPasswordStrokes);
 
-                    // 5. Decide and show result
-                    if (riskScore <= RISK_THRESHOLD) {
-                        showModal('Access Granted', 'Your typing pattern matches. Welcome!', riskScore, true);
+                    // 4. Separate live data and compare patterns
+                    const liveUsernameStrokes = liveKeystrokeData.filter(k => k.field === 'username');
+                    const livePasswordStrokes = liveKeystrokeData.filter(k => k.field === 'password');
+
+                    const usernameRisk = comparePatterns(liveUsernameStrokes, usernameProfile);
+                    const passwordRisk = comparePatterns(livePasswordStrokes, passwordProfile);
+
+                    // 5. Calculate final weighted risk score
+                    const finalRiskScore = (usernameRisk * 0.4) + (passwordRisk * 0.6); // Password is more important
+                    const RISK_THRESHOLD = 1.5; // Z-scores are different, so threshold is higher
+
+                    // 6. Decide and show result
+                    if (finalRiskScore <= RISK_THRESHOLD) {
+                        showModal('Access Granted', 'Your typing pattern matches. Welcome!', finalRiskScore, true);
                     } else {
-                        showModal('Access Denied', 'Your typing pattern does not match the profile.', riskScore, false);
+                        showModal('Access Denied', 'Your typing pattern does not match the profile.', finalRiskScore, false);
                     }
 
                 } catch (error) {
