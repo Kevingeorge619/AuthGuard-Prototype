@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuthGuard - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .glow-shadow {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 5px rgba(59, 130, 246, 0.3);
+        }
+        .modal {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-2xl shadow-2xl">
+        <div class="text-center">
+            <h1 class="text-3xl font-bold text-white">AuthGuard Login</h1>
+            <p class="mt-2 text-gray-400">Please enter your credentials to log in.</p>
+        </div>
+
+        <!-- Login Form -->
+        <div class="space-y-4">
+            <div>
+                <label for="username" class="text-sm font-medium text-gray-300">Username</label>
+                <input type="text" id="username" class="mt-1 w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter your username">
+            </div>
+            <div>
+                <label for="password" class="text-sm font-medium text-gray-300">Password</label>
+                <input type="password" id="password" class="mt-1 w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter your password">
+            </div>
+        </div>
+
+        <!-- Login Button -->
+        <div class="pt-2">
+            <button id="loginButton" class="w-full px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition disabled:opacity-50 glow-shadow">
+                Login
+            </button>
+        </div>
+        
+        <!-- Status Message -->
+        <div id="errorMessage" class="text-center text-red-400 font-medium h-6"></div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="resultModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 modal opacity-0 pointer-events-none">
+        <div id="modalContent" class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center transform scale-95 transition-transform duration-300">
+            <h2 id="modalTitle" class="text-2xl font-bold text-white"></h2>
+            <p id="modalMessage" class="mt-2 text-gray-400"></p>
+            <div class="mt-6">
+                <p class="text-sm text-gray-500">Calculated Risk Score</p>
+                <p id="modalScore" class="text-3xl font-bold"></p>
+            </div>
+            <button id="closeModalButton" class="mt-6 w-full px-4 py-2 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+                Close
+            </button>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, where, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Firebase Setup ---
+            let db, auth;
+            let isAuthReady = false;
+            try {
+                // User's provided Firebase configuration
+                const firebaseConfig = {
+                  apiKey: "AIzaSyBPYjEyTb13x0R-i8e-lGaO7oYZU6CgX_k",
+                  authDomain: "authguard-prototype-cdfcb.firebaseapp.com",
+                  projectId: "authguard-prototype-cdfcb",
+                  storageBucket: "authguard-prototype-cdfcb.appspot.com",
+                  messagingSenderId: "958086604155",
+                  appId: "1:958086604155:web:a4a83f731d14e2cf2849de"
+                };
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        isAuthReady = true;
+                        console.log("Firestore connection ready.");
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                });
+            } catch (e) {
+                document.getElementById('errorMessage').textContent = "Backend connection failed.";
+                console.error(e);
+            }
+
+            // --- DOM Elements ---
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            const loginButton = document.getElementById('loginButton');
+            const errorMessage = document.getElementById('errorMessage');
+            const resultModal = document.getElementById('resultModal');
+            const modalContent = document.getElementById('modalContent');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalScore = document.getElementById('modalScore');
+            const closeModalButton = document.getElementById('closeModalButton');
+
+            // --- Keystroke Capture Logic ---
+            let liveKeystrokeData = [];
+            let keyPressTimestamps = {};
+            let lastReleaseTime = null;
+
+            const handleKeyDown = (e) => {
+                if (!keyPressTimestamps[e.key]) {
+                    const pressTime = Date.now();
+                    keyPressTimestamps[e.key] = pressTime;
+                    const flightTime = lastReleaseTime ? pressTime - lastReleaseTime : 0;
+                    liveKeystrokeData.push({ key: e.key, flight_time: flightTime > 0 ? flightTime : 0 });
+                }
+            };
+
+            const handleKeyUp = (e) => {
+                const releaseTime = Date.now();
+                lastReleaseTime = releaseTime;
+                const pressTime = keyPressTimestamps[e.key];
+                if (pressTime) {
+                    const dwellTime = releaseTime - pressTime;
+                    const eventData = liveKeystrokeData.find(d => d.key === e.key && !d.dwell_time);
+                    if (eventData) eventData.dwell_time = dwellTime;
+                    delete keyPressTimestamps[e.key];
+                }
+            };
+
+            usernameInput.addEventListener('keydown', handleKeyDown);
+            usernameInput.addEventListener('keyup', handleKeyUp);
+            passwordInput.addEventListener('keydown', handleKeyDown);
+            passwordInput.addEventListener('keyup', handleKeyUp);
+
+            // --- Analysis Logic ---
+            const calculateAverages = (keystrokes) => {
+                if (!keystrokes || keystrokes.length === 0) return { avgDwell: 0, avgFlight: 0 };
+                const totalDwell = keystrokes.reduce((sum, k) => sum + (k.dwell_time || 0), 0);
+                const totalFlight = keystrokes.reduce((sum, k) => sum + (k.flight_time || 0), 0);
+                return {
+                    avgDwell: totalDwell / keystrokes.length,
+                    avgFlight: totalFlight / keystrokes.length,
+                };
+            };
+
+            const calculateRiskScore = (liveAverages, trainingAverages) => {
+                const dwellDiff = Math.abs(liveAverages.avgDwell - trainingAverages.avgDwell) / trainingAverages.avgDwell;
+                const flightDiff = Math.abs(liveAverages.avgFlight - trainingAverages.avgFlight) / trainingAverages.avgFlight;
+                const riskScore = (dwellDiff + flightDiff) / 2;
+                return isNaN(riskScore) ? 1 : riskScore;
+            };
+
+            const showModal = (title, message, score, isSuccess) => {
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                modalScore.textContent = score.toFixed(4);
+                modalScore.className = isSuccess ? 'text-3xl font-bold text-green-400' : 'text-3xl font-bold text-red-400';
+                resultModal.classList.remove('opacity-0', 'pointer-events-none');
+                modalContent.classList.remove('scale-95');
+            };
+
+            const hideModal = () => {
+                resultModal.classList.add('opacity-0', 'pointer-events-none');
+                modalContent.classList.add('scale-95');
+            };
+
+            closeModalButton.addEventListener('click', hideModal);
+
+            // --- Login Button Action ---
+            loginButton.addEventListener('click', async () => {
+                const username = usernameInput.value.trim();
+                if (!username) {
+                    errorMessage.textContent = "Username is required.";
+                    return;
+                }
+                if (!isAuthReady) {
+                    errorMessage.textContent = "Connecting to backend... Please wait.";
+                    return;
+                }
+
+                loginButton.disabled = true;
+                loginButton.textContent = "Analyzing...";
+                errorMessage.textContent = "";
+
+                try {
+                    // 1. Fetch training data from Firestore
+                    const collectionPath = `/keystroke_training_data`;
+                    const q = query(collection(db, collectionPath), where("baseUserId", "==", username));
+                    const querySnapshot = await getDocs(q);
+
+                    if (querySnapshot.empty) {
+                        showModal('Login Failed', `No training data found for user '${username}'. Please complete the training process.`, 1, false);
+                        return;
+                    }
+
+                    // 2. Calculate average from all training samples
+                    let allTrainingKeystrokes = [];
+                    querySnapshot.forEach(doc => {
+                        allTrainingKeystrokes.push(...doc.data().keystrokes);
+                    });
+                    const trainingAverages = calculateAverages(allTrainingKeystrokes);
+
+                    // 3. Calculate averages from the live attempt
+                    const liveAverages = calculateAverages(liveKeystrokeData);
+                    
+                    // 4. Calculate risk score
+                    const riskScore = calculateRiskScore(liveAverages, trainingAverages);
+                    const RISK_THRESHOLD = 0.35;
+
+                    // 5. Decide and show result
+                    if (riskScore <= RISK_THRESHOLD) {
+                        showModal('Access Granted', 'Your typing pattern matches. Welcome!', riskScore, true);
+                    } else {
+                        showModal('Access Denied', 'Your typing pattern does not match the profile.', riskScore, false);
+                    }
+
+                } catch (error) {
+                    console.error("Login process failed:", error);
+                    errorMessage.textContent = "An error occurred during login.";
+                } finally {
+                    // Reset state for next attempt
+                    loginButton.disabled = false;
+                    loginButton.textContent = "Login";
+                    liveKeystrokeData = [];
+                    keyPressTimestamps = {};
+                    lastReleaseTime = null;
+                    usernameInput.value = '';
+                    passwordInput.value = '';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

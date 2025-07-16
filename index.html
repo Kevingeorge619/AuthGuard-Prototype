@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuthGuard - Training Data Collector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .glow-shadow {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 5px rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-2xl p-8 space-y-6 bg-gray-800 rounded-2xl shadow-2xl">
+        <div class="text-center">
+            <h1 class="text-3xl font-bold text-white">AuthGuard Training Data Collector</h1>
+            <p class="mt-2 text-gray-400">Please provide 10 typing samples to train your behavioral profile.</p>
+        </div>
+
+        <!-- User ID Input -->
+        <div class="space-y-2">
+            <label for="userId" class="text-sm font-medium text-gray-300">User ID</label>
+            <input type="text" id="userId" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition disabled:opacity-50" placeholder="Connecting to backend..." disabled>
+            <p class="text-xs text-gray-500">This will be the base name for your training samples (e.g., user_kevin_1, user_kevin_2...).</p>
+        </div>
+
+        <!-- Training Section (Initially hidden) -->
+        <div id="trainingSection" class="space-y-6 hidden pt-4">
+            <!-- Username Input -->
+            <div class="space-y-2">
+                <label for="username" class="text-sm font-medium text-gray-300">Username</label>
+                <input type="text" id="username" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter the same username for all samples">
+            </div>
+
+            <!-- Password Input -->
+            <div class="space-y-2">
+                <label for="password" class="text-sm font-medium text-gray-300">Password</label>
+                <input type="password" id="password" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter the same password for all samples">
+                <p class="text-xs text-gray-500">This password will NOT be saved.</p>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="space-y-2 pt-2">
+                 <label class="text-sm font-medium text-gray-300">Training Progress</label>
+                 <div class="w-full bg-gray-700 rounded-full h-4">
+                    <div id="progressBar" class="bg-blue-600 h-4 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                 </div>
+                 <div id="progressText" class="text-center text-sm text-gray-400 mt-1">Sample 1 of 10</div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-between items-center mt-6">
+            <button id="saveButton" class="px-6 py-2 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed glow-shadow" disabled>
+                Save Sample
+            </button>
+            <button id="resetButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-gray-500 transition">
+                Reset All
+            </button>
+        </div>
+        
+        <!-- Status Message -->
+        <div id="statusMessage" class="text-center text-green-400 font-medium h-6"></div>
+        <div id="errorMessage" class="text-center text-red-400 font-medium h-6"></div>
+
+        <!-- Display User ID for Collaboration -->
+        <div class="text-center pt-4 border-t border-gray-700">
+             <p class="text-sm text-gray-400">Your Firebase Auth User ID:</p>
+             <p id="firebaseUserId" class="text-lg font-mono text-blue-400 break-all">Initializing...</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Main Application Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Element References ---
+            const userIdInput = document.getElementById('userId');
+            const trainingSection = document.getElementById('trainingSection');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            const saveButton = document.getElementById('saveButton');
+            const resetButton = document.getElementById('resetButton');
+            const statusMessage = document.getElementById('statusMessage');
+            const errorMessage = document.getElementById('errorMessage');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const firebaseUserIdText = document.getElementById('firebaseUserId');
+
+            // --- State Management ---
+            const TARGET_SAMPLES = 10;
+            let sampleCount = 1;
+            let isAuthReady = false;
+            let currentUserId = null;
+            let db, auth;
+
+            // --- Firebase Configuration and Initialization ---
+            try {
+                // User's provided Firebase configuration
+                const firebaseConfig = {
+                  apiKey: "AIzaSyBPYjEyTb13x0R-i8e-lGaO7oYZU6CgX_k",
+                  authDomain: "authguard-prototype-cdfcb.firebaseapp.com",
+                  projectId: "authguard-prototype-cdfcb",
+                  storageBucket: "authguard-prototype-cdfcb.appspot.com",
+                  messagingSenderId: "958086604155",
+                  appId: "1:958086604155:web:a4a83f731d14e2cf2849de"
+                };
+                
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+
+                // --- Authentication ---
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        firebaseUserIdText.textContent = currentUserId;
+                        isAuthReady = true;
+                        userIdInput.disabled = false;
+                        userIdInput.placeholder = "e.g., user_kevin";
+                        errorMessage.textContent = "";
+                    } else {
+                        firebaseUserIdText.textContent = "Authenticating...";
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Authentication failed:", error);
+                            errorMessage.textContent = "Authentication failed. Please refresh.";
+                            firebaseUserIdText.textContent = "Error";
+                            isAuthReady = false;
+                        }
+                    }
+                });
+
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+                errorMessage.textContent = "Error: Could not connect to backend services.";
+                isAuthReady = false;
+            }
+
+            // --- Keystroke Dynamics Logic ---
+            let keystrokeData = [];
+            let keyPressTimestamps = {};
+            let lastReleaseTime = null;
+
+            const resetForNextSample = () => {
+                keystrokeData = [];
+                keyPressTimestamps = {};
+                lastReleaseTime = null;
+                usernameInput.value = '';
+                passwordInput.value = '';
+                statusMessage.textContent = '';
+                errorMessage.textContent = '';
+                usernameInput.focus();
+            };
+
+            const resetAll = () => {
+                resetForNextSample();
+                sampleCount = 1;
+                userIdInput.value = '';
+                if(isAuthReady) userIdInput.disabled = false;
+                trainingSection.classList.add('hidden');
+                saveButton.disabled = true;
+                saveButton.textContent = 'Save Sample';
+                updateProgress();
+            };
+
+            const updateProgress = () => {
+                const percentage = ((sampleCount - 1) / TARGET_SAMPLES) * 100;
+                progressBar.style.width = `${percentage}%`;
+                progressText.textContent = `Sample ${sampleCount} of ${TARGET_SAMPLES}`;
+
+                if (sampleCount > TARGET_SAMPLES) {
+                    progressText.textContent = `All ${TARGET_SAMPLES} samples collected!`;
+                    statusMessage.textContent = "Training complete. Thank you!";
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Completed';
+                    usernameInput.disabled = true;
+                    passwordInput.disabled = true;
+                }
+            };
+
+            // --- Event Listeners ---
+            userIdInput.addEventListener('input', () => {
+                if (userIdInput.value.trim().length > 0) {
+                    trainingSection.classList.remove('hidden');
+                    saveButton.disabled = false;
+                } else {
+                    trainingSection.classList.add('hidden');
+                    saveButton.disabled = true;
+                }
+            });
+
+            const handleKeyDown = (e) => {
+                if (!keyPressTimestamps[e.key]) {
+                    const pressTime = Date.now();
+                    keyPressTimestamps[e.key] = pressTime;
+                    const flightTime = lastReleaseTime ? pressTime - lastReleaseTime : 0;
+                    
+                    keystrokeData.push({
+                        key: e.key,
+                        field: e.target.id,
+                        press_time: pressTime,
+                        flight_time: flightTime > 0 ? flightTime : 0,
+                    });
+                }
+            };
+
+            const handleKeyUp = (e) => {
+                const releaseTime = Date.now();
+                lastReleaseTime = releaseTime;
+                const pressTime = keyPressTimestamps[e.key];
+
+                if (pressTime) {
+                    const dwellTime = releaseTime - pressTime;
+                    const eventData = keystrokeData.find(d => d.key === e.key && d.field === e.target.id && !d.release_time);
+                    if (eventData) {
+                        eventData.release_time = releaseTime;
+                        eventData.dwell_time = dwellTime;
+                    }
+                    delete keyPressTimestamps[e.key];
+                }
+            };
+
+            usernameInput.addEventListener('keydown', handleKeyDown);
+            usernameInput.addEventListener('keyup', handleKeyUp);
+            passwordInput.addEventListener('keydown', handleKeyDown);
+            passwordInput.addEventListener('keyup', handleKeyUp);
+            
+            resetButton.addEventListener('click', resetAll);
+
+            saveButton.addEventListener('click', async () => {
+                const baseUserId = userIdInput.value.trim();
+                const username = usernameInput.value.trim();
+                const password = passwordInput.value.trim();
+
+                if (!isAuthReady || !currentUserId) {
+                    errorMessage.textContent = "Authentication not ready. Please wait or refresh.";
+                    return;
+                }
+                if (!username || !password) {
+                    errorMessage.textContent = "Please fill out both username and password.";
+                    return;
+                }
+                if (keystrokeData.length < 5) {
+                     errorMessage.textContent = "Not enough typing data captured.";
+                     return;
+                }
+                if (sampleCount > TARGET_SAMPLES) return;
+
+                statusMessage.textContent = 'Saving...';
+                errorMessage.textContent = '';
+                saveButton.disabled = true;
+                userIdInput.disabled = true;
+
+                const trainingSubjectId = `${baseUserId}_${sampleCount}`;
+
+                try {
+                    const collectionPath = `/keystroke_training_data`;
+                    
+                    await addDoc(collection(db, collectionPath), {
+                        trainingSubjectId: trainingSubjectId,
+                        baseUserId: baseUserId,
+                        sampleNumber: sampleCount,
+                        username: username,
+                        firebaseAuthId: currentUserId,
+                        keystrokes: keystrokeData,
+                        createdAt: serverTimestamp(),
+                        userAgent: navigator.userAgent
+                    });
+
+                    console.log(`Document written for subject: ${trainingSubjectId}`);
+                    statusMessage.textContent = `Successfully saved sample ${sampleCount} of ${TARGET_SAMPLES}!`;
+                    
+                    sampleCount++;
+                    updateProgress();
+
+                    setTimeout(() => {
+                        if (sampleCount <= TARGET_SAMPLES) {
+                            resetForNextSample();
+                            saveButton.disabled = false;
+                        }
+                    }, 1500);
+
+                } catch (error) {
+                    console.error("Error adding document: ", error);
+                    errorMessage.textContent = "Failed to save data. Check console.";
+                    statusMessage.textContent = '';
+                    saveButton.disabled = false;
+                }
+            });
+
+            // Initial setup
+            updateProgress();
+        });
+    </script>
+</body>
+</html>
