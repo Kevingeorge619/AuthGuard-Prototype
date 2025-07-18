@@ -26,7 +26,6 @@
             <p class="mt-2 text-gray-400">Please enter your credentials to log in.</p>
         </div>
 
-        <!-- Login Form -->
         <div class="space-y-4">
             <div>
                 <label for="username" class="text-sm font-medium text-gray-300">Username</label>
@@ -38,14 +37,12 @@
             </div>
         </div>
 
-        <!-- Login Button -->
         <div class="pt-2">
             <button id="loginButton" class="w-full px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition disabled:opacity-50 glow-shadow">
                 Login
             </button>
         </div>
         
-        <!-- Status Message -->
         <div id="errorMessage" class="text-center text-red-400 font-medium h-6"></div>
     </div>
 
@@ -66,45 +63,11 @@
 
 
     <script type="module">
-        // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, where, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, where, getDocs, setLogLevel, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         document.addEventListener('DOMContentLoaded', () => {
-            // --- Firebase Setup ---
-            let db, auth;
-            let isAuthReady = false;
-            try {
-                // User's provided Firebase configuration
-                const firebaseConfig = {
-                  apiKey: "AIzaSyBPYjEyTb13x0R-i8e-lGaO7oYZU6CgX_k",
-                  authDomain: "authguard-prototype-cdfcb.firebaseapp.com",
-                  projectId: "authguard-prototype-cdfcb",
-                  storageBucket: "authguard-prototype-cdfcb.appspot.com",
-                  messagingSenderId: "958086604155",
-                  appId: "1:958086604155:web:a4a83f731d14e2cf2849de"
-                };
-
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                setLogLevel('debug');
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        isAuthReady = true;
-                        console.log("Firestore connection ready.");
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                });
-            } catch (e) {
-                document.getElementById('errorMessage').textContent = "Backend connection failed.";
-                console.error(e);
-            }
-
-            // --- DOM Elements ---
             const usernameInput = document.getElementById('username');
             const passwordInput = document.getElementById('password');
             const loginButton = document.getElementById('loginButton');
@@ -116,25 +79,61 @@
             const modalScore = document.getElementById('modalScore');
             const closeModalButton = document.getElementById('closeModalButton');
 
-            // --- Keystroke Capture Logic ---
+            let db, auth;
             let liveKeystrokeData = [];
             let keyPressTimestamps = {};
             let lastReleaseTime = null;
 
+            const simpleHash = str => {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = (hash << 5) - hash + char;
+                    hash |= 0;
+                }
+                return hash;
+            };
+
+            try {
+                const firebaseConfig = {
+                  apiKey: "AIzaSyBPYjEyTb13x0R-i8e-lGaO7oYZU6CgX_k",
+                  authDomain: "authguard-prototype-cdfcb.firebaseapp.com",
+                  projectId: "authguard-prototype-cdfcb",
+                  storageBucket: "authguard-prototype-cdfcb.appspot.com",
+                  messagingSenderId: "958086604155",
+                  appId: "1:958086604155:web:a4a83f731d14e2cf2849de"
+                };
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+                onAuthStateChanged(auth, user => {
+                    if (!user) signInAnonymously(auth);
+                });
+            } catch (e) {
+                errorMessage.textContent = "Backend connection failed.";
+            }
+
             const handleKeyDown = (e) => {
+                if (e.key === 'Backspace') {
+                    const fieldId = e.target.id;
+                    const lastStrokeForField = liveKeystrokeData.slice().reverse().find(k => k.field === fieldId);
+                    if (lastStrokeForField) {
+                         liveKeystrokeData = liveKeystrokeData.filter(k => k !== lastStrokeForField);
+                    }
+                    return;
+                }
+                if (e.key.length > 1) return;
                 if (!keyPressTimestamps[e.key]) {
                     const pressTime = Date.now();
                     keyPressTimestamps[e.key] = pressTime;
                     const flightTime = lastReleaseTime ? pressTime - lastReleaseTime : 0;
-                    liveKeystrokeData.push({
-                        key: e.key,
-                        field: e.target.id,
-                        flight_time: flightTime > 0 ? flightTime : 0
-                    });
+                    liveKeystrokeData.push({ key: e.key, field: e.target.id, flight_time: flightTime > 0 ? flightTime : 0 });
                 }
             };
 
             const handleKeyUp = (e) => {
+                if (e.key.length > 1) return;
                 const releaseTime = Date.now();
                 lastReleaseTime = releaseTime;
                 const pressTime = keyPressTimestamps[e.key];
@@ -145,15 +144,19 @@
                     delete keyPressTimestamps[e.key];
                 }
             };
-
-            usernameInput.addEventListener('keydown', handleKeyDown);
-            usernameInput.addEventListener('keyup', handleKeyUp);
-            passwordInput.addEventListener('keydown', handleKeyDown);
-            passwordInput.addEventListener('keyup', handleKeyUp);
-
-            // --- ADVANCED Analysis Logic ---
             
-            // Calculates the mean and standard deviation for a set of timings
+            const handleInput = (e) => {
+                if (e.target.value === '') {
+                    liveKeystrokeData = liveKeystrokeData.filter(k => k.field !== e.target.id);
+                }
+            };
+
+            [usernameInput, passwordInput].forEach(input => {
+                input.addEventListener('keydown', handleKeyDown);
+                input.addEventListener('keyup', handleKeyUp);
+                input.addEventListener('input', handleInput);
+            });
+
             const getStats = (timings) => {
                 const n = timings.length;
                 if (n === 0) return { mean: 0, std: 0 };
@@ -162,47 +165,31 @@
                 return { mean, std };
             };
 
-            // Prepares the training data by calculating stats for each key
-            const getTrainingProfile = (trainingKeystrokes) => {
+            const getTrainingProfile = (strokes) => {
                 const profile = {};
-                // Group strokes by key
-                const strokesByKey = trainingKeystrokes.reduce((acc, stroke) => {
-                    if (!acc[stroke.key]) acc[stroke.key] = { dwells: [], flights: [] };
-                    if(stroke.dwell_time) acc[stroke.key].dwells.push(stroke.dwell_time);
-                    if(stroke.flight_time) acc[stroke.key].flights.push(stroke.flight_time);
+                const byKey = strokes.reduce((acc, s) => {
+                    if (!acc[s.key]) acc[s.key] = { dwells: [], flights: [] };
+                    if (s.dwell_time) acc[s.key].dwells.push(s.dwell_time);
+                    if (s.flight_time) acc[s.key].flights.push(s.flight_time);
                     return acc;
                 }, {});
-
-                // Calculate stats for each key
-                for (const key in strokesByKey) {
-                    profile[key] = {
-                        dwell: getStats(strokesByKey[key].dwells),
-                        flight: getStats(strokesByKey[key].flights),
-                    };
+                for (const key in byKey) {
+                    profile[key] = { dwell: getStats(byKey[key].dwells), flight: getStats(byKey[key].flights) };
                 }
                 return profile;
             };
 
-            // Compares the live typing to the training profile
-            const comparePatterns = (liveStrokes, trainingProfile) => {
+            const comparePatterns = (live, profile) => {
                 let deviations = [];
-                for (const stroke of liveStrokes) {
-                    const profileKey = trainingProfile[stroke.key];
-                    if (profileKey) {
-                        // Calculate Z-score (how many standard deviations away from the mean)
-                        if (stroke.dwell_time && profileKey.dwell.std > 0) {
-                            deviations.push(Math.abs(stroke.dwell_time - profileKey.dwell.mean) / profileKey.dwell.std);
-                        }
-                        if (stroke.flight_time && profileKey.flight.std > 0) {
-                             deviations.push(Math.abs(stroke.flight_time - profileKey.flight.mean) / profileKey.flight.std);
-                        }
+                for (const stroke of live) {
+                    const pKey = profile[stroke.key];
+                    if (pKey) {
+                        if (stroke.dwell_time && pKey.dwell.std > 0) deviations.push(Math.abs(stroke.dwell_time - pKey.dwell.mean) / pKey.dwell.std);
+                        if (stroke.flight_time && pKey.flight.std > 0) deviations.push(Math.abs(stroke.flight_time - pKey.flight.mean) / pKey.flight.std);
                     }
                 }
-                if (deviations.length === 0) return 1; // Max risk if no comparable keys
-                // Average deviation score
-                return deviations.reduce((a, b) => a + b, 0) / deviations.length;
+                return deviations.length === 0 ? 1 : deviations.reduce((a, b) => a + b, 0) / deviations.length;
             };
-
 
             const showModal = (title, message, score, isSuccess) => {
                 modalTitle.textContent = title;
@@ -213,24 +200,16 @@
                 modalContent.classList.remove('scale-95');
             };
 
-            const hideModal = () => {
-                resultModal.classList.add('opacity-0', 'pointer-events-none');
-                modalContent.classList.add('scale-95');
-            };
+            closeModalButton.addEventListener('click', () => {
+                 resultModal.classList.add('opacity-0', 'pointer-events-none');
+                 modalContent.classList.add('scale-95');
+            });
 
-            closeModalButton.addEventListener('click', hideModal);
-
-            // --- Login Button Action ---
             loginButton.addEventListener('click', async () => {
                 const username = usernameInput.value.trim();
-                const password = passwordInput.value.trim();
-
+                const password = passwordInput.value;
                 if (!username || !password) {
                     errorMessage.textContent = "All fields are required.";
-                    return;
-                }
-                if (!isAuthReady) {
-                    errorMessage.textContent = "Connecting to backend... Please wait.";
                     return;
                 }
 
@@ -238,57 +217,66 @@
                 loginButton.textContent = "Analyzing...";
                 errorMessage.textContent = "";
 
-                try {
-                    // 1. Fetch training data from Firestore
-                    const collectionPath = "keystroke_training_data";
-                    const q = query(collection(db, collectionPath), where("baseUserId", "==", username));
-                    const querySnapshot = await getDocs(q);
+                let riskScore = 1.0;
+                let outcome = 'denied';
+                let passwordHashFromDb = null;
 
-                    if (querySnapshot.empty) {
-                        showModal('Login Failed', `No training data found for user '${username}'.`, 1, false);
+                try {
+                    const q = query(collection(db, "keystroke_training_data"), where("baseUserId", "==", username));
+                    const snapshot = await getDocs(q);
+                    if (snapshot.empty) {
+                        errorMessage.textContent = `No training data found for user '${username}'.`;
                         return;
                     }
 
-                    // 2. Separate training data by field (username/password)
-                    let trainingUsernameStrokes = [];
-                    let trainingPasswordStrokes = [];
-                    querySnapshot.forEach(doc => {
-                        const data = doc.data();
-                        if (data.username !== username) { // Basic password check
-                           console.warn("Training data username mismatch. Skipping doc:", doc.id);
-                           return;
+                    // --- STAGE 1: Password Verification ---
+                    snapshot.forEach(doc => {
+                        if (doc.data().passwordHash) {
+                            passwordHashFromDb = doc.data().passwordHash;
                         }
-                        trainingUsernameStrokes.push(...data.keystrokes.filter(k => k.field === 'username'));
-                        trainingPasswordStrokes.push(...data.keystrokes.filter(k => k.field === 'password'));
                     });
 
-                    // 3. Create a statistical profile from the training data
-                    const usernameProfile = getTrainingProfile(trainingUsernameStrokes);
-                    const passwordProfile = getTrainingProfile(trainingPasswordStrokes);
+                    if (!passwordHashFromDb || simpleHash(password) !== passwordHashFromDb) {
+                        errorMessage.textContent = "Invalid username or password.";
+                        outcome = 'denied_wrong_password';
+                        return; // Stop immediately
+                    }
 
-                    // 4. Separate live data and compare patterns
-                    const liveUsernameStrokes = liveKeystrokeData.filter(k => k.field === 'username');
-                    const livePasswordStrokes = liveKeystrokeData.filter(k => k.field === 'password');
+                    // --- STAGE 2: Keystroke Analysis ---
+                    let trainUser = [], trainPass = [];
+                    snapshot.forEach(doc => {
+                        trainUser.push(...doc.data().keystrokes.filter(k => k.field === 'username'));
+                        trainPass.push(...doc.data().keystrokes.filter(k => k.field === 'password'));
+                    });
 
-                    const usernameRisk = comparePatterns(liveUsernameStrokes, usernameProfile);
-                    const passwordRisk = comparePatterns(livePasswordStrokes, passwordProfile);
+                    const userProfile = getTrainingProfile(trainUser);
+                    const passProfile = getTrainingProfile(trainPass);
+                    const liveUser = liveKeystrokeData.filter(k => k.field === 'username');
+                    const livePass = liveKeystrokeData.filter(k => k.field === 'password');
 
-                    // 5. Calculate final weighted risk score
-                    const finalRiskScore = (usernameRisk * 0.4) + (passwordRisk * 0.6); // Password is more important
-                    const RISK_THRESHOLD = 1.5; // Z-scores are different, so threshold is higher
+                    const userRisk = comparePatterns(liveUser, userProfile);
+                    const passRisk = comparePatterns(livePass, passProfile);
+                    
+                    riskScore = (userRisk * 0.4) + (passRisk * 0.6);
+                    const RISK_THRESHOLD = 1.5;
 
-                    // 6. Decide and show result
-                    if (finalRiskScore <= RISK_THRESHOLD) {
-                        showModal('Access Granted', 'Your typing pattern matches. Welcome!', finalRiskScore, true);
+                    if (riskScore <= RISK_THRESHOLD) {
+                        outcome = 'granted';
+                        showModal('Access Granted', 'Your typing pattern matches. Welcome!', riskScore, true);
                     } else {
-                        showModal('Access Denied', 'Your typing pattern does not match the profile.', finalRiskScore, false);
+                        outcome = 'denied_bad_pattern';
+                        showModal('Access Denied', 'Your typing pattern does not match.', riskScore, false);
                     }
 
                 } catch (error) {
-                    console.error("Login process failed:", error);
                     errorMessage.textContent = "An error occurred during login.";
                 } finally {
-                    // Reset state for next attempt
+                    await addDoc(collection(db, "login_history"), {
+                        userId: username,
+                        riskScore: riskScore,
+                        outcome: outcome,
+                        timestamp: serverTimestamp(),
+                    });
                     loginButton.disabled = false;
                     loginButton.textContent = "Login";
                     liveKeystrokeData = [];

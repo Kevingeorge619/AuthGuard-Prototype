@@ -18,7 +18,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen">
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen py-12">
 
     <div class="w-full max-w-2xl p-8 space-y-6 bg-gray-800 rounded-2xl shadow-2xl">
         <div class="text-center">
@@ -30,25 +30,23 @@
         <div class="space-y-2">
             <label for="userId" class="text-sm font-medium text-gray-300">User ID</label>
             <input type="text" id="userId" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition disabled:opacity-50" placeholder="Connecting to backend..." disabled>
-            <p class="text-xs text-gray-500">This will be the base name for your training samples (e.g., user_kevin_1, user_kevin_2...).</p>
+            <p class="text-xs text-gray-500">This will be the base name for your training samples.</p>
         </div>
 
         <!-- Training Section (Initially hidden) -->
         <div id="trainingSection" class="space-y-6 hidden pt-4">
-            <!-- Username Input -->
             <div class="space-y-2">
                 <label for="username" class="text-sm font-medium text-gray-300">Username</label>
                 <input type="text" id="username" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter the same username for all samples">
             </div>
-
-            <!-- Password Input -->
             <div class="space-y-2">
                 <label for="password" class="text-sm font-medium text-gray-300">Password</label>
                 <input type="password" id="password" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Enter the same password for all samples">
-                <p class="text-xs text-gray-500">This password will NOT be saved.</p>
             </div>
-
-            <!-- Progress Bar -->
+             <div id="confirmPasswordWrapper" class="space-y-2">
+                <label for="confirmPassword" class="text-sm font-medium text-gray-300">Confirm Password</label>
+                <input type="password" id="confirmPassword" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" placeholder="Confirm your password">
+            </div>
             <div class="space-y-2 pt-2">
                  <label class="text-sm font-medium text-gray-300">Training Progress</label>
                  <div class="w-full bg-gray-700 rounded-full h-4">
@@ -59,82 +57,97 @@
         </div>
 
         <!-- Action Buttons -->
-        <div class="flex justify-between items-center mt-6">
+        <div class="flex justify-center items-center mt-6">
             <button id="saveButton" class="px-6 py-2 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed glow-shadow" disabled>
                 Save Sample
             </button>
-             <div class="flex space-x-2">
-                <button id="resetButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-gray-500 transition">
-                    Reset All
-                </button>
-                <button id="deleteAllButton" class="px-6 py-2 font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500 transition">
-                    Delete All Data
-                </button>
-            </div>
         </div>
         
-        <!-- Status Message -->
+        <!-- Status & Error Messages -->
         <div id="statusMessage" class="text-center text-green-400 font-medium h-6"></div>
         <div id="errorMessage" class="text-center text-red-400 font-medium h-6"></div>
 
-        <!-- Display User ID for Collaboration -->
-        <div class="text-center pt-4 border-t border-gray-700">
-             <p class="text-sm text-gray-400">Your Firebase Auth User ID:</p>
-             <p id="firebaseUserId" class="text-lg font-mono text-blue-400 break-all">Initializing...</p>
+        <!-- Data Management Section -->
+        <div class="pt-6 border-t border-gray-700 space-y-4">
+            <h2 class="text-xl font-bold text-center text-white">Data Management</h2>
+            <div class="space-y-2">
+                <label for="deleteUserId" class="text-sm font-medium text-gray-300">Delete a specific user's data</label>
+                <div class="flex space-x-2">
+                    <input type="text" id="deleteUserId" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:outline-none transition" placeholder="Enter User ID to delete">
+                    <button id="deleteUserButton" class="px-4 py-2 font-semibold text-white bg-yellow-600 rounded-lg hover:bg-yellow-700">Delete User</button>
+                </div>
+            </div>
+            <div class="text-center">
+                 <button id="deleteAllButton" class="px-6 py-2 font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">
+                    Delete All Training Data
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Confirmation Modal -->
     <div id="confirmModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 modal opacity-0 pointer-events-none">
         <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
-            <h2 class="text-2xl font-bold text-white">Are you sure?</h2>
-            <p class="mt-2 text-gray-400">This will permanently delete all training data from the database. This action cannot be undone.</p>
+            <h2 id="confirmModalTitle" class="text-2xl font-bold text-white">Are you sure?</h2>
+            <p id="confirmModalMessage" class="mt-2 text-gray-400"></p>
             <div class="mt-6 flex justify-center space-x-4">
                 <button id="cancelDeleteButton" class="px-6 py-2 font-semibold text-white bg-gray-600 rounded-lg hover:bg-gray-700">
                     Cancel
                 </button>
                 <button id="confirmDeleteButton" class="px-6 py-2 font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">
-                    Yes, Delete All
+                    Yes, Delete
                 </button>
             </div>
         </div>
     </div>
 
     <script type="module">
-        // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Main Application Logic ---
         document.addEventListener('DOMContentLoaded', () => {
-            // --- DOM Element References ---
             const userIdInput = document.getElementById('userId');
             const trainingSection = document.getElementById('trainingSection');
             const usernameInput = document.getElementById('username');
             const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirmPassword');
+            const confirmPasswordWrapper = document.getElementById('confirmPasswordWrapper');
             const saveButton = document.getElementById('saveButton');
-            const resetButton = document.getElementById('resetButton');
             const deleteAllButton = document.getElementById('deleteAllButton');
+            const deleteUserIdInput = document.getElementById('deleteUserId');
+            const deleteUserButton = document.getElementById('deleteUserButton');
             const statusMessage = document.getElementById('statusMessage');
             const errorMessage = document.getElementById('errorMessage');
             const progressBar = document.getElementById('progressBar');
             const progressText = document.getElementById('progressText');
-            const firebaseUserIdText = document.getElementById('firebaseUserId');
             const confirmModal = document.getElementById('confirmModal');
+            const confirmModalTitle = document.getElementById('confirmModalTitle');
+            const confirmModalMessage = document.getElementById('confirmModalMessage');
             const confirmDeleteButton = document.getElementById('confirmDeleteButton');
             const cancelDeleteButton = document.getElementById('cancelDeleteButton');
 
-            // --- State Management ---
             const TARGET_SAMPLES = 10;
             let sampleCount = 1;
-            let isAuthReady = false;
-            let currentUserId = null;
             let db, auth;
+            let firstPasswordHash = null;
+            let deleteAction = null;
+            let keystrokeData = [];
+            let keyPressTimestamps = {};
+            let lastReleaseTime = null;
 
-            // --- Firebase Configuration and Initialization ---
+            // Simple hash function for prototype purposes. Use bcrypt in production.
+            const simpleHash = str => {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = (hash << 5) - hash + char;
+                    hash |= 0; // Convert to 32bit integer
+                }
+                return hash;
+            };
+
             try {
-                // User's provided Firebase configuration
                 const firebaseConfig = {
                   apiKey: "AIzaSyBPYjEyTb13x0R-i8e-lGaO7oYZU6CgX_k",
                   authDomain: "authguard-prototype-cdfcb.firebaseapp.com",
@@ -143,44 +156,21 @@
                   messagingSenderId: "958086604155",
                   appId: "1:958086604155:web:a4a83f731d14e2cf2849de"
                 };
-                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 setLogLevel('debug');
-
-                // --- Authentication ---
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        currentUserId = user.uid;
-                        firebaseUserIdText.textContent = currentUserId;
-                        isAuthReady = true;
                         userIdInput.disabled = false;
                         userIdInput.placeholder = "e.g., user_kevin";
-                        errorMessage.textContent = "";
                     } else {
-                        firebaseUserIdText.textContent = "Authenticating...";
-                        try {
-                            await signInAnonymously(auth);
-                        } catch (error) {
-                            console.error("Authentication failed:", error);
-                            errorMessage.textContent = "Authentication failed. Please refresh.";
-                            firebaseUserIdText.textContent = "Error";
-                            isAuthReady = false;
-                        }
+                        await signInAnonymously(auth);
                     }
                 });
-
             } catch (e) {
-                console.error("Firebase initialization failed:", e);
                 errorMessage.textContent = "Error: Could not connect to backend services.";
-                isAuthReady = false;
             }
-
-            // --- Keystroke Dynamics Logic ---
-            let keystrokeData = [];
-            let keyPressTimestamps = {};
-            let lastReleaseTime = null;
 
             const resetForNextSample = () => {
                 keystrokeData = [];
@@ -188,68 +178,49 @@
                 lastReleaseTime = null;
                 usernameInput.value = '';
                 passwordInput.value = '';
+                confirmPasswordInput.value = '';
                 statusMessage.textContent = '';
                 errorMessage.textContent = '';
                 usernameInput.focus();
-            };
-
-            const resetAll = () => {
-                resetForNextSample();
-                sampleCount = 1;
-                userIdInput.value = '';
-                if(isAuthReady) userIdInput.disabled = false;
-                trainingSection.classList.add('hidden');
-                saveButton.disabled = true;
-                saveButton.textContent = 'Save Sample';
-                updateProgress();
             };
 
             const updateProgress = () => {
                 const percentage = ((sampleCount - 1) / TARGET_SAMPLES) * 100;
                 progressBar.style.width = `${percentage}%`;
                 progressText.textContent = `Sample ${sampleCount} of ${TARGET_SAMPLES}`;
+                confirmPasswordWrapper.style.display = sampleCount === 1 ? 'block' : 'none';
 
                 if (sampleCount > TARGET_SAMPLES) {
                     progressText.textContent = `All ${TARGET_SAMPLES} samples collected!`;
                     statusMessage.textContent = "Training complete. Thank you!";
                     saveButton.disabled = true;
                     saveButton.textContent = 'Completed';
-                    usernameInput.disabled = true;
-                    passwordInput.disabled = true;
                 }
             };
-
-            // --- Event Listeners ---
-            userIdInput.addEventListener('input', () => {
-                if (userIdInput.value.trim().length > 0) {
-                    trainingSection.classList.remove('hidden');
-                    saveButton.disabled = false;
-                } else {
-                    trainingSection.classList.add('hidden');
-                    saveButton.disabled = true;
-                }
-            });
-
+            
             const handleKeyDown = (e) => {
+                if (e.key === 'Backspace') {
+                    const fieldId = e.target.id;
+                    const lastStrokeForField = keystrokeData.slice().reverse().find(k => k.field === fieldId);
+                    if (lastStrokeForField) {
+                        keystrokeData = keystrokeData.filter(k => k !== lastStrokeForField);
+                    }
+                    return;
+                }
+                if (e.key.length > 1) return;
                 if (!keyPressTimestamps[e.key]) {
                     const pressTime = Date.now();
                     keyPressTimestamps[e.key] = pressTime;
                     const flightTime = lastReleaseTime ? pressTime - lastReleaseTime : 0;
-                    
-                    keystrokeData.push({
-                        key: e.key,
-                        field: e.target.id,
-                        press_time: pressTime,
-                        flight_time: flightTime > 0 ? flightTime : 0,
-                    });
+                    keystrokeData.push({ key: e.key, field: e.target.id, press_time: pressTime, flight_time: flightTime > 0 ? flightTime : 0 });
                 }
             };
 
             const handleKeyUp = (e) => {
+                if (e.key.length > 1) return;
                 const releaseTime = Date.now();
                 lastReleaseTime = releaseTime;
                 const pressTime = keyPressTimestamps[e.key];
-
                 if (pressTime) {
                     const dwellTime = releaseTime - pressTime;
                     const eventData = keystrokeData.find(d => d.key === e.key && d.field === e.target.id && !d.release_time);
@@ -261,110 +232,119 @@
                 }
             };
 
-            usernameInput.addEventListener('keydown', handleKeyDown);
-            usernameInput.addEventListener('keyup', handleKeyUp);
-            passwordInput.addEventListener('keydown', handleKeyDown);
-            passwordInput.addEventListener('keyup', handleKeyUp);
-            
-            resetButton.addEventListener('click', resetAll);
+            const handleInput = (e) => {
+                if (e.target.value === '') {
+                    keystrokeData = keystrokeData.filter(k => k.field !== e.target.id);
+                }
+            };
+
+            [usernameInput, passwordInput, confirmPasswordInput].forEach(input => {
+                input.addEventListener('keydown', handleKeyDown);
+                input.addEventListener('keyup', handleKeyUp);
+                input.addEventListener('input', handleInput);
+            });
+
+            userIdInput.addEventListener('input', () => {
+                const hasUser = userIdInput.value.trim().length > 0;
+                trainingSection.classList.toggle('hidden', !hasUser);
+                saveButton.disabled = !hasUser;
+            });
 
             saveButton.addEventListener('click', async () => {
                 const baseUserId = userIdInput.value.trim();
                 const username = usernameInput.value.trim();
-                const password = passwordInput.value.trim();
+                const password = passwordInput.value;
+                const confirmPassword = confirmPasswordInput.value;
 
-                if (!isAuthReady || !currentUserId) {
-                    errorMessage.textContent = "Authentication not ready. Please wait or refresh.";
-                    return;
-                }
                 if (!username || !password) {
-                    errorMessage.textContent = "Please fill out both username and password.";
+                    errorMessage.textContent = "Username and password are required.";
                     return;
                 }
-                if (keystrokeData.length < 5) {
-                     errorMessage.textContent = "Not enough typing data captured.";
-                     return;
+
+                if (sampleCount === 1) {
+                    if (password !== confirmPassword) {
+                        errorMessage.textContent = "Passwords do not match.";
+                        return;
+                    }
+                    firstPasswordHash = simpleHash(password);
+                } else {
+                    if (simpleHash(password) !== firstPasswordHash) {
+                        errorMessage.textContent = "Password does not match the first sample. Please use the same password.";
+                        return;
+                    }
                 }
-                if (sampleCount > TARGET_SAMPLES) return;
 
                 statusMessage.textContent = 'Saving...';
                 errorMessage.textContent = '';
                 saveButton.disabled = true;
                 userIdInput.disabled = true;
 
-                const trainingSubjectId = `${baseUserId}_${sampleCount}`;
-
                 try {
                     const collectionPath = "keystroke_training_data";
-                    
-                    await addDoc(collection(db, collectionPath), {
-                        trainingSubjectId: trainingSubjectId,
+                    const docData = {
                         baseUserId: baseUserId,
                         sampleNumber: sampleCount,
                         username: username,
-                        firebaseAuthId: currentUserId,
                         keystrokes: keystrokeData,
                         createdAt: serverTimestamp(),
-                        userAgent: navigator.userAgent
-                    });
-
-                    console.log(`Document written for subject: ${trainingSubjectId}`);
-                    statusMessage.textContent = `Successfully saved sample ${sampleCount} of ${TARGET_SAMPLES}!`;
+                    };
+                    if (sampleCount === 1) {
+                        docData.passwordHash = firstPasswordHash;
+                    }
+                    await addDoc(collection(db, collectionPath), docData);
                     
+                    statusMessage.textContent = `Successfully saved sample ${sampleCount} of ${TARGET_SAMPLES}!`;
                     sampleCount++;
                     updateProgress();
-
-                    setTimeout(() => {
-                        if (sampleCount <= TARGET_SAMPLES) {
-                            resetForNextSample();
-                            saveButton.disabled = false;
-                        }
-                    }, 1500);
+                    resetForNextSample();
 
                 } catch (error) {
-                    console.error("Error adding document: ", error);
                     errorMessage.textContent = "Failed to save data. Check console.";
-                    statusMessage.textContent = '';
-                    saveButton.disabled = false;
+                } finally {
+                    if (sampleCount <= TARGET_SAMPLES) {
+                        saveButton.disabled = false;
+                    }
                 }
             });
 
-            // --- Delete Data Logic ---
-            const showConfirmModal = () => {
+            // Delete logic remains the same...
+            const showConfirmModal = (title, message, action) => {
+                confirmModalTitle.textContent = title;
+                confirmModalMessage.textContent = message;
+                deleteAction = action;
                 confirmModal.classList.remove('opacity-0', 'pointer-events-none');
             };
             const hideConfirmModal = () => {
                 confirmModal.classList.add('opacity-0', 'pointer-events-none');
+                deleteAction = null;
             };
-
-            deleteAllButton.addEventListener('click', showConfirmModal);
             cancelDeleteButton.addEventListener('click', hideConfirmModal);
-            confirmDeleteButton.addEventListener('click', async () => {
+            confirmDeleteButton.addEventListener('click', () => {
+                if (deleteAction) deleteAction();
                 hideConfirmModal();
-                statusMessage.textContent = 'Deleting all data...';
-                errorMessage.textContent = '';
-                deleteAllButton.disabled = true;
-
-                try {
-                    const collectionPath = "keystroke_training_data";
-                    const querySnapshot = await getDocs(collection(db, collectionPath));
-                    const deletePromises = [];
-                    querySnapshot.forEach((doc) => {
-                        deletePromises.push(deleteDoc(doc.ref));
-                    });
-                    await Promise.all(deletePromises);
-                    statusMessage.textContent = 'All training data has been deleted successfully.';
-                    console.log('All documents deleted.');
-                    resetAll(); // Also reset the UI
-                } catch (error) {
-                    console.error("Error deleting documents: ", error);
-                    errorMessage.textContent = 'Failed to delete data. Check console.';
-                } finally {
-                    deleteAllButton.disabled = false;
-                }
+            });
+            deleteUserButton.addEventListener('click', () => {
+                const userToDelete = deleteUserIdInput.value.trim();
+                if (!userToDelete) return;
+                const action = async () => {
+                    const q = query(collection(db, "keystroke_training_data"), where("baseUserId", "==", userToDelete));
+                    const snapshot = await getDocs(q);
+                    const promises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(promises);
+                    statusMessage.textContent = `Deleted data for ${userToDelete}.`;
+                };
+                showConfirmModal('Delete User Data?', `This will delete all data for '${userToDelete}'.`, action);
+            });
+            deleteAllButton.addEventListener('click', () => {
+                const action = async () => {
+                    const snapshot = await getDocs(collection(db, "keystroke_training_data"));
+                    const promises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(promises);
+                    statusMessage.textContent = 'All training data deleted.';
+                };
+                showConfirmModal('Delete All Data?', 'This will delete all training data.', action);
             });
 
-            // Initial setup
             updateProgress();
         });
     </script>
